@@ -1,0 +1,273 @@
+---
+title: "Qtm 385 Final"
+author: '2381092'
+date: '2022-04-30'
+output:
+  pdf_document: default
+  html_document: default
+---
+1. Classification tree and forest
+a)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+df<- read.csv("~/Desktop/Datasets/sim-criteo.csv", header=TRUE)
+library(caTools)
+library(tidyverse)
+set.seed(123)
+df <- df %>%
+  mutate(Y = factor(Y, levels = c(0, 1), labels = c(0,1))) 
+train_ind <- sample.split(c(1:nrow(df)), SplitRatio = 0.8)
+train <- subset(df, train_ind == TRUE)
+test <- subset(df, train_ind == FALSE)
+
+
+```
+
+b)
+```{r}
+library(tree)
+library(dplyr)
+
+tree_fit <- tree(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = train, method = "class" ) 
+summary(tree_fit)
+plot(tree_fit)
+text(tree_fit, pretty = 0)
+
+tree.pred = predict(tree_fit, newdata = test, type = "class")
+table(tree.pred, test$Y)
+1-(858+28)/(858+106+8+28)
+```
+The misclassifciation error rate is .114. The tree shows us the relevant covariates, f9 f2 and f8, as well as the relationship between different value of these covariates and whether or not the site ended up being visited.These are the variables used in tree construction
+c)
+```{r}
+set.seed(123)
+cv.fit <- cv.tree(tree_fit, FUN = prune.tree)
+par(mfrow = c(1, 1))
+plot(cv.fit$size, cv.fit$dev, type = "b")
+best.size <- cv.fit$size[which.min(cv.fit$dev)]
+best.size #best reported leve of tree compexity
+pruned.fit <- prune.tree(tree_fit, best = best.size)
+par(mfrow = c(1, 1))
+plot(pruned.fit)
+text(pruned.fit, pretty = 0)
+
+
+
+```
+Pruning methods suggest the optimal level of tree complexity is 4. 
+
+
+d)
+```{r}
+library(randomForest)
+forest.fit <- randomForest(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = train, method = "class", mtry = 10)
+forest.pred <- predict(forest.fit, newdata = test, type = "class")
+table(forest.pred, test$Y)
+1-(826+36)/(826+36+40+98)   #Classification error of .138
+forest.fit2 <- randomForest(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = train, method = "class", mtry = 6)
+forest.pred2 <- predict(forest.fit2, newdata = test, type = "class")
+table(forest.pred2, test$Y)
+1-(837+36)/(837+29+36+98)  #Classification error rate of .127
+forest.fit3 <- randomForest(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = train, method = "class", mtry = 4)
+forest.pred3 <- predict(forest.fit3, newdata = test, type = "class")
+table(forest.pred3, test$Y)
+1-(837+38)/(837+29+38+96)  #Classification error rate of .125
+```
+Random Forest doesnt improve on the classification error tree. At m = 10, 6, and 4 respectivelty the classification error rates were .138, .127, and .125 which were all higher than the original rate of .114. This is because 
+
+2. ATE, ATT, oberved differences and selection bias
+a)
+```{r}
+ate <- mean(df$Y.treat - df$Y.control)
+ate
+```
+ATE is .4212
+b)
+```{r}
+att <- sum((df$Y.treat- df$Y.control) * df$W)/sum(df$W)
+att
+```
+ATT is .45
+c)
+```{r}
+df<- read.csv("~/Desktop/Datasets/sim-criteo.csv", header=TRUE)
+obs.diff <- sum(df$Y * df$W)/sum(df$W) - sum(df$Y *
+(1 - df$W))/sum(1 - df$W)
+obs.diff
+```
+Observed Difference is .474
+
+d) Based on these outcomes I think this data has selection bias. This is due to the difference between observed difference and ATT. If there were no selection bias these values should be equal. The selection bias is the difference between these values which is .02375
+
+3. Matching
+a)
+```{r}
+out <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = df )
+summary(out)
+
+```
+Estimated coefficient of Di is .45. This estimated coefficient is a credible estimate of ATE and ATT if there is no selection bias present in our data.
+
+b)
+```{r}
+library(MatchIt)
+match.fit1 <- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "nearest", distance = "mahalanobis", ratio = 1)
+m_data1 <- match.data(match.fit1)
+fit1 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = m_data1, weights = weights )
+summary(fit1) #.455
+
+match.fit2 <- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "nearest", distance = "mahalanobis", ratio = 2)
+m_data2 <- match.data(match.fit2)
+fit2 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = m_data2, weights = weights )
+summary(fit2) #.449
+
+match.fit3 <- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "nearest", distance = "mahalanobis", ratio = 3)
+m_data3 <- match.data(match.fit3)
+fit3 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = m_data3, weights = weights )
+summary(fit3) #.447
+
+```
+Optimal m is 2 because the estimated coefficient is closest to the att. The coefficient is .449
+c)
+```{r}
+match.fit1 <- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "nearest", distance = "glm", ratio = 1) #
+m_data1 <- match.data(match.fit1)
+fit1 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = m_data1, weights = weights )
+summary(fit1) #.45
+
+match.fit2 <- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "nearest", distance = "glm", ratio = 2)
+m_data2 <- match.data(match.fit2)
+fit2 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = m_data2, weights = weights )
+summary(fit2) #.452
+
+match.fit3 <- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "nearest", distance = "glm", ratio = 3)
+m_data3 <- match.data(match.fit3)
+fit3 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = m_data3, weights = weights )
+summary(fit3) #.45
+```
+#Optimal m value is m=3 because the estimated coefficient of Di is closest to the ATT, which is .4497
+
+d)
+```{r}
+sub5<- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "subclass",subclass = 5)
+sub_data5 <- match.data(sub5)
+fit5 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = sub_data5 )
+summary(fit5) #.448
+
+sub10<- matchit( W ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11, data = df, method = "subclass",subclass = 10)
+sub_data10 <- match.data(sub10)
+fit10 <- lm(Y ~ f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8 + f9 + f10 + f11 + W, data = sub_data10 )
+summary(fit10) #.448
+
+```
+The estimated coefficient for Di at both subgroups of size 5 and 10 is .448
+e)
+The estimated value using all methods was pretty close to the true ATT of .45. Of the methods the propensity score method with m=3 yielded the coefficient closest to the true ATT. This is because it can control the influence of participants by weighting their responses based on their propensity scores.
+
+4. Causal Forests and treatment effect estimation
+a)
+```{r}
+library(grf)
+?causal_forest
+X <- c("f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11")
+outcome <- "Y"
+treatment <- "W"
+fmla <- formula(paste0("~ 0 +", paste0(X, collapse = "+")))
+Z <- model.matrix(fmla, df)
+W <- df[, treatment]
+Y <- df[, outcome]
+forest.tau <- causal_forest(Z, Y, W)
+
+```
+
+b)
+```{r}
+tau.hat <- forest.tau$predictions
+e.hat <- forest.tau$W.hat #Estimate propensity scores
+m.hat <- forest.tau$Y.hat
+mu.hat.con <- m.hat-e.hat*tau.hat #Estimated control outcomes
+mu.hat.treat <- m.hat+(1-e.hat)*tau.hat #estimated treated outcomes
+```
+
+c)
+```{r}
+ipw <- mean(Y * W/e.hat) - mean(Y * (1 - W)/(1 -
+e.hat))
+ipw
+```
+#IPW estimate is .461
+d)
+```{r}
+direct.est <- mean(mu.hat.treat - mu.hat.con)
+direct.est
+```
+#Direct estimate is .45
+e)
+```{r}
+AIPW <- (ipw + direct.est)/2
+AIPW
+```
+#AIPW estimate is .456
+f)
+I would choose the AIPW estimate because it is doubly robust which makes it less likely to violate and of our required conditions. It requires only either the propensity or outcome model to be correctly specified but not both.
+
+5. Panel Data
+
+a)
+```{r}
+germany <- read.csv("~/Desktop/Datasets/germany.csv", header=TRUE)
+germany.wide <- reshape(germany[, c("year", "country", "gdp")], timevar = "year",
+idvar = "country", direction = "wide")
+out <- as.matrix(germany.wide[, 2:ncol(germany.wide)])
+row.names(out) <- germany.wide$country
+T0 <- 31
+T. <- ncol(out)
+N <- nrow(out)
+other.idx <- rownames(out)[rownames(out) != "WestGermany"]
+ger.before <- mean(out["WestGermany", 1:T0])
+ger.after <- mean(out["WestGermany", (T0 + 1):T.])
+other.before <- mean(out[other.idx, 1:T0])
+other.after <- mean(out[other.idx, (T0 + 1):T.])
+did <- (ger.after - ger.before) - (other.after - other.before)
+did
+
+```
+#Difference in Difference estimator estimates effect of reunification on West Germany's GDP is 436.43
+b)
+```{r}
+ger.postpred <- rep(0, T. - T0)
+out.df <- as.data.frame(out)
+for (i in c(1:T. - T0)) {
+  fmla <- as.formula(paste("gdp.", as.character(1959 + T0 + i), " ~ ",
+paste(colnames(out)[1:T0], collapse = "+"), sep = ""))
+model <- lm(fmla, data = out.df, subset = other.idx)
+ger.postpred[i] <- predict(model, newdata = out.df["WestGermany",])
+}
+
+
+
+```
+
+c)
+```{r}
+library(Synth)
+dataprep.out <- dataprep(germany, dependent = "gdp", unit.variable = "country.id",
+time.variable = "year", special.predictors = list(list("infrate",
+1981:1989, c("mean")), list("trade", 1981:1989, c("mean")), list("gdp", 1981:1989, c("mean")), list("industry", 1981:1989, c("mean")), list("schooling", 1980:1985, c("mean")), list("invest80", 1980, c("mean"))), unit.names.variable = "country",
+treatment.identifier = N, controls.identifier = c(1:(N -
+1)), time.predictors.prior = c(1981:1989), time.optimize.ssr = c(1960:1989),
+time.plot = c(1990:2003))
+synth.out <- synth(dataprep.out)
+path.plot(synth.res = synth.out, dataprep.res = dataprep.out,
+Ylab = c("Gdp"), Xlab = c("Year"), Legend = c("Ger", "Synthetic West Germany"),
+Legend.position = c("topleft"))
+
+```
+
+d)
+```{r}
+synth.out$solution.w
+model$coefficients
+```
+
+The downside of vertical regression is the inability to use it when there are more pretreatment observations than parameters. In this case vertical regression is accpebtable because there are more pretreatment time periods than countries observed. On top of this, it doesn't account for other predictors(Zi) to be used. As we can see from the comparison of weights in the two models, the vertical regression uses past gdp value weighted differently per year whereas the synthetic control model weihts each alternative country based on how similar the covariates make it to West Germany. 
